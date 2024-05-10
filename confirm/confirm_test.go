@@ -432,3 +432,48 @@ func TestGenerateRecoverCreds(t *testing.T) {
 		t.Error("expected verifier to match")
 	}
 }
+
+func TestGenerateConfirmCreds(t *testing.T) {
+	// Test valid case
+	selector, verifier, token, err := GenerateConfirmCreds()
+	require.NoError(t, err)
+	assert.NotEmpty(t, selector)
+	assert.NotEmpty(t, verifier)
+	assert.NotEmpty(t, token)
+
+	// Check that selector and verifier are valid base64 encoded strings
+	_, err = base64.StdEncoding.DecodeString(selector)
+	assert.NoError(t, err)
+	_, err = base64.StdEncoding.DecodeString(verifier)
+	assert.NoError(t, err)
+
+	// Check that token is a valid base64 URL encoded string
+	decodedToken, err := base64.URLEncoding.DecodeString(token)
+	require.NoError(t, err)
+	assert.Len(t, decodedToken, 64)
+
+	// Verify selector matches SHA-512 hash of first 32 bytes of decoded token
+	expectedSelector := sha512.Sum512(decodedToken[:32])
+	assert.Equal(t, base64.StdEncoding.EncodeToString(expectedSelector[:]), selector)
+
+	// Verify verifier matches SHA-512 hash of last 32 bytes of decoded token  
+	expectedVerifier := sha512.Sum512(decodedToken[32:])
+	assert.Equal(t, base64.StdEncoding.EncodeToString(expectedVerifier[:]), verifier)
+
+	// Test with an invalid token generator
+	invalidGenerator := &mocks.TokenGenerator{
+		GenerateTokenErr: errors.New("failed"),
+	}
+	_, _, _, err = GenerateConfirmCreds(invalidGenerator)
+	assert.Error(t, err)
+
+	// Test with a malformed token (invalid base64)
+	malformedToken := "not_base64"
+	_, _, _, err = GenerateConfirmCreds(authboss.NewSha512TokenGenerator(64, malformedToken))
+	assert.Error(t, err)
+
+	// Test with a token that is valid base64 but invalid length after decoding
+	invalidLengthToken := base64.URLEncoding.EncodeToString([]byte("too_short"))
+	_, _, _, err = GenerateConfirmCreds(authboss.NewSha512TokenGenerator(64, invalidLengthToken))
+	assert.Error(t, err)
+}
