@@ -27,6 +27,17 @@ type Rules struct {
 	MinNumeric           int
 	MinSymbols           int
 	AllowWhitespace      bool
+
+	// ValidationFunction is a custom validation function that can be provided
+	// to validate the field value. It should return true if the value is valid
+	// and false otherwise.
+	ValidationFunction func(string) bool
+
+	// UseRegexValidation controls whether to use the regular expression-based
+	// validation or the custom ValidationFunction. If set to true, the regular
+	// expression-based validation will be used. If set to false, the custom
+	// ValidationFunction will be used if provided.
+	UseRegexValidation bool
 }
 
 // Errors returns an array of errors for each validation error that
@@ -39,9 +50,15 @@ func (r Rules) Errors(toValidate string) authboss.ErrorList {
 		return append(errs, FieldError{r.FieldName, errors.New("Cannot be blank")})
 	}
 
-	if r.MustMatch != nil {
-		if !r.MustMatch.MatchString(toValidate) {
-			errs = append(errs, FieldError{r.FieldName, errors.New(r.MatchError)})
+	if r.UseRegexValidation {
+		if r.MustMatch != nil {
+			if !r.MustMatch.MatchString(toValidate) {
+				errs = append(errs, FieldError{r.FieldName, errors.New(r.MatchError)})
+			}
+		}
+	} else if r.ValidationFunction != nil {
+		if !r.ValidationFunction(toValidate) {
+			errs = append(errs, FieldError{r.FieldName, errors.New("Invalid value")})
 		}
 	}
 
