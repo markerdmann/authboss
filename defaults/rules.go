@@ -7,6 +7,7 @@ import (
 
 	"github.com/friendsofgo/errors"
 	"github.com/volatiletech/authboss/v3"
+	"net/mail"
 )
 
 var blankRegex = regexp.MustCompile(`^\s*$`)
@@ -27,10 +28,22 @@ type Rules struct {
 	MinNumeric           int
 	MinSymbols           int
 	AllowWhitespace      bool
+
+	// ValidationFunction is a custom validation function that can be provided
+	// to validate the field value. It should return true if the value is valid.
+	ValidationFunction func(string) bool
+
+	// UseRegexValidation determines whether to use the regular expression-based
+	// validation or the ParseAddress validation for email addresses.
+	// If set to true, the regular expression-based validation will be used.
+	// If set to false (default), the ParseAddress validation will be used.
+	UseRegexValidation bool
 }
 
 // Errors returns an array of errors for each validation error that
 // is present in the given string. Returns nil if there are no errors.
+import "net/mail"
+
 func (r Rules) Errors(toValidate string) authboss.ErrorList {
 	errs := make(authboss.ErrorList, 0)
 
@@ -39,9 +52,27 @@ func (r Rules) Errors(toValidate string) authboss.ErrorList {
 		return append(errs, FieldError{r.FieldName, errors.New("Cannot be blank")})
 	}
 
-	if r.MustMatch != nil {
-		if !r.MustMatch.MatchString(toValidate) {
-			errs = append(errs, FieldError{r.FieldName, errors.New(r.MatchError)})
+	if r.ValidationFunction != nil {
+		if !r.ValidationFunction(toValidate) {
+			errs = append(errs, FieldError{r.FieldName, errors.New("Invalid value")})
+		}
+	} else if r.FieldName == "email" {
+		if r.UseRegexValidation {
+			if r.MustMatch != nil {
+				if !r.MustMatch.MatchString(toValidate) {
+					errs = append(errs, FieldError{r.FieldName, errors.New(r.MatchError)})
+				}
+			}
+		} else {
+			if _, err := mail.ParseAddress(toValidate); err != nil {
+				errs = append(errs, FieldError{r.FieldName, errors.New("Invalid email address")})
+			}
+		}
+	} else {
+		if r.MustMatch != nil {
+			if !r.MustMatch.MatchString(toValidate) {
+				errs = append(errs, FieldError{r.FieldName, errors.New(r.MatchError)})
+			}
 		}
 	}
 
